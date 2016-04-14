@@ -3,7 +3,14 @@
             [clojure.string :as string]
             [clojure.data.csv :as csv]))
 
-;; Challenge 1
+(def byte->char unchecked-char)
+(def char->byte (comp unchecked-byte int))
+
+(defn bytes->string [bs]
+  (apply str (map byte->char bs)))
+(defn string->bytes [s]
+  (map char->byte s))
+
 
 (defn hex-decode
   "Converts a string of hexadecimal numbers to bytes"
@@ -12,33 +19,42 @@
               (map (comp unchecked-byte #(Integer/parseInt % 16) #(apply str %))
                    (partition 2 hs))))
 
+(defn- left0
+  "Adds 0 on the left of a single-digit string, since a byte should always be two hex digits"
+  [s]
+  (if (= (count s) 1) (str \0 s) s))
+
+(defn hex-encode
+  "Converts bytes to string of hexadecimal numbers"
+  [bs]
+  (apply str (map (comp left0 #(Integer/toUnsignedString % 16) #(Byte/toUnsignedInt %)) bs)))
+
+
+
 (def ^:private ^java.util.Base64$Encoder base64-encoder (java.util.Base64/getEncoder))
+(def ^:private ^java.util.Base64$Decoder base64-decoder (java.util.Base64/getDecoder))
 
 (defn base64-encode
   "Converts bytes to base64 string"
   [bs]
   (.encodeToString base64-encoder bs))
 
-(def hex->base64 (comp base64-encode hex-decode))
-
-;; Other useful functions
-
-(defn hex-encode
-  "Converts bytes to string of hexadecimal numbers"
+(defn base64-decode
+  "Converts base64 string to bytes"
   [bs]
-  (apply str (map (comp #(Integer/toUnsignedString % 16) #(Byte/toUnsignedInt %)) bs)))
+  (.decode base64-decoder (bytes bs)))
+
 
 (defn bytes=
   "Compares two byte arrays for equality"
   [bs1 bs2]
   (= (seq bs1) (seq bs2)))
 
-(def ^:private ^java.util.Base64$Decoder base64-decoder (java.util.Base64/getDecoder))
 
-(defn base64-decode
-  "Converts base64 string to bytes"
-  [bs]
-  (.decode base64-decoder (bytes bs)))
+
+;; Challenge 1
+
+(def hex->base64 (comp base64-encode hex-decode))
 
 ;; Challenge 2
 
@@ -50,7 +66,7 @@
 (defn fixed-xor
   "xor two same-sized buffers"
   [bs1 bs2]
-  (byte-array (map byte-xor bs1 bs2)))
+  (byte-array (count bs1) (map byte-xor bs1 bs2)))
 
 
 ;; Challenge 3
@@ -71,7 +87,8 @@
 
 (def english-letter-frequencies 
   (map-norm
-    {\a 	8.167
+    {\space 22.864
+     \a 	8.167
      \b 	1.492
      \c 	2.782
      \d 	4.253
@@ -116,9 +133,21 @@ freqs may have fewer keys than base-freqs"
   "Rates the Englishness of a piece of text by doing a mean square error of character freqs against standard freqs
   Lower is better."
   [text]
-  (let [text (filter (set alphabet) (string/lower-case text))
+  (let [text (filter (set (keys english-letter-frequencies)) 
+                     (string/lower-case text))
+        char-freqs (frequencies text)]
+    (dot-product english-letter-frequencies char-freqs)))
+
+(defn rate-englishness-grams-normalized
+  "Rates the Englishness of a piece of text by doing a mean square error of character freqs against standard freqs
+  Lower is better."
+  [text]
+  (let [text (filter (set (keys english-letter-frequencies)) 
+                     (string/lower-case text))
         char-freqs (map-norm (frequencies text))]
     (dot-product english-letter-frequencies char-freqs)))
+
+;; Digrams work really well
 
 (def digram-data
   (let [str->long (fn [s] (if (= s "") 0 (Long/parseLong s)))]
@@ -142,7 +171,8 @@ freqs may have fewer keys than base-freqs"
        (<= (long \a) (long c2) (long \z))))
 
 (defn printable-char? [c]
-  (<= 32 (long c) 127))
+  (or (get (set (map long "\t\n\r")) c)
+      (<= 32 (long c) 127)))
 
 (defn count-printable-chars [s]
   (count (filter printable-char? s)))
@@ -153,23 +183,22 @@ freqs may have fewer keys than base-freqs"
         digram-freqs (map-norm (frequencies digrams))]
     (dot-product english-digram-frequencies digram-freqs)))
 
-(defn rate-englishness [text]
-  [(+ (rate-englishness-grams text)
+(defn rate-englishness-sum [text]
+  [(+ (rate-englishness-grams-normalized text)
       (rate-englishness-digrams text))
    (count-printable-chars text)])
+
+;; Back to Challenge 3
 
 (defn single-byte-xor [bs b]
   (byte-array (map (partial byte-xor b) bs)))
 
-(defn bytes->string [bs]
-  (apply str (map unchecked-char bs)))
-
 (defn single-byte-xor-info [bs b]
   (let [result (bytes->string (single-byte-xor bs b))]
-    [(rate-englishness result) b result]))
+    [(rate-englishness-grams result) result]))
 
 (defn best-byte-xors [bs]
-  (sort-by first #(- (compare %1 %2))
+  (sort-by first >
            (map (partial single-byte-xor-info bs)
                 (map byte (range -128 128)))))
 
@@ -188,5 +217,8 @@ freqs may have fewer keys than base-freqs"
 (defn challenge4 []
   (last (first (best-single-char-xor-lines single-char-xor-lines))))
 
+;; Challenge 5
 
+(defn repeating-key-xor [k bs]
+  (fixed-xor bs (cycle k)))
 

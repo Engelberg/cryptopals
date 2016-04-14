@@ -15,5 +15,9 @@
                 (hex-decode "746865206b696420646f6e277420706c6179"))))
   (testing "problem3"
            (is (= (best-byte-xor (hex-decode "1b37373331363f78151b7f2b783431333d78397828372d363c78373e783a393b3736"))
-                  "Cooking MC's like a pound of bacon"))))
+                  "Cooking MC's like a pound of bacon")))
+  (testing "problem5"
+           (is (= "0b3637272a2b2e63622c2e69692a23693a2a3c6324202d623d63343c2a26226324272765272a282b2f20430a652e2c652a3124333a653e2b2027630c692b20283165286326302e27282f"
+                  (hex-encode (repeating-key-xor (string->bytes "ICE")
+                                                 (string->bytes "Burning 'em, if you ain't quick and nimble\nI go crazy when I hear a cymbal")))))))
                
