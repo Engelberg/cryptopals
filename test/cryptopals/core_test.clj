@@ -12,4 +12,8 @@
            "746865206b696420646f6e277420706c6179"))
     (is (bytes= (fixed-xor (hex-decode "1c0111001f010100061a024b53535009181c")
                            (hex-decode "686974207468652062756c6c277320657965"))
-                (hex-decode "746865206b696420646f6e277420706c6179")))))
+                (hex-decode "746865206b696420646f6e277420706c6179"))))
+  (testing "problem3"
+           (is (= (best-byte-xor (hex-decode "1b37373331363f78151b7f2b783431333d78397828372d363c78373e783a393b3736"))
+                  "Cooking MC's like a pound of bacon"))))
+               
