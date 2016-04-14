@@ -176,5 +176,17 @@ freqs may have fewer keys than base-freqs"
 (defn best-byte-xor [bs]
   (last (first (best-byte-xors bs))))
 
+;; Challenge 4
+
+(def single-char-xor-lines 
+  (with-open [in-file (io/reader "resources/single-xor.txt")]
+    (map hex-decode (string/split-lines (slurp in-file)))))
+
+(defn best-single-char-xor-lines [byte-lines]
+  (sort-by first #(compare %2 %1) (mapcat best-byte-xors byte-lines)))
+
+(defn challenge4 []
+  (last (first (best-single-char-xor-lines single-char-xor-lines))))
+
 
 
