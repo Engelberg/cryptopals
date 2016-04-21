@@ -1,16 +1,16 @@
 (ns cryptopals.core
   (:require [clojure.java.io :as io]
             [clojure.string :as string]
-            [clojure.data.csv :as csv]))
+            [clojure.data.csv :as csv])
+  (:import javax.crypto.Cipher javax.crypto.spec.SecretKeySpec))
 
 (def byte->char unchecked-char)
 (def char->byte (comp unchecked-byte int))
 
 (defn bytes->string [bs]
   (apply str (map byte->char bs)))
-(defn string->bytes [s]
-  (byte-array (map char->byte s)))
-
+(defn string->bytes [^String s]
+  (.getBytes s))
 
 (defn hex-decode
   "Converts a string of hexadecimal numbers to bytes"
@@ -42,7 +42,7 @@
 (defn base64-decode
   "Converts base64 string to bytes"
   [s]
-  (.decode base64-decoder s))
+  (.decode base64-decoder ^String s))
 
 
 (defn bytes=
@@ -274,5 +274,38 @@ freqs may have fewer keys than base-freqs"
 (defn crack-challenge6 []
   (map bytes->string (break-repeating-key challenge6-ciphertext)))
 
-
+;; Challenge 7
                      
+(def challenge7-ciphertext
+  (with-open [in-file (io/reader "resources/7.txt")]
+    (base64-decode (string/replace (slurp in-file) "\n" ""))))
+
+(defn aes-decode "Takes bs and key as bytes" [bs key]
+  (let [aes-128-ecb-instance (Cipher/getInstance "AES/ECB/PKCS5Padding"),
+        secret-key-spec (SecretKeySpec. key "AES") 
+        _ (.init aes-128-ecb-instance Cipher/DECRYPT_MODE secret-key-spec)]
+    (.doFinal aes-128-ecb-instance bs)))
+
+(defn aes-encode "Takes bs and key as bytes" [bs key]
+  (let [aes-128-ecb-instance (Cipher/getInstance "AES/ECB/PKCS5Padding"),
+        secret-key-spec (SecretKeySpec. key "AES") 
+        _ (.init aes-128-ecb-instance Cipher/ENCRYPT_MODE secret-key-spec)]
+    (.doFinal aes-128-ecb-instance bs)))
+
+(defn crack-challenge7 []
+  (bytes->string (aes-decode challenge7-ciphertext (string->bytes "YELLOW SUBMARINE"))))
+
+;; Challenge 8
+
+(def challenge8-ciphertexts 
+  (with-open [in-file (io/reader "resources/8.txt")]
+    (map hex-decode (string/split-lines (slurp in-file)))))
+
+(defn aes-ecb? [bs]
+  (let [blocks16 (partition 16 bs)]
+    (not= (count blocks16) (count (distinct blocks16)))))
+
+(defn crack-challenge8 []
+  (hex-encode (first (filter aes-ecb? challenge8-ciphertexts))))
+
+
