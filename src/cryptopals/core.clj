@@ -9,7 +9,7 @@
 (defn bytes->string [bs]
   (apply str (map byte->char bs)))
 (defn string->bytes [s]
-  (map char->byte s))
+  (byte-array (map char->byte s)))
 
 
 (defn hex-decode
@@ -41,8 +41,8 @@
 
 (defn base64-decode
   "Converts base64 string to bytes"
-  [bs]
-  (.decode base64-decoder (bytes bs)))
+  [s]
+  (.decode base64-decoder s))
 
 
 (defn bytes=
@@ -64,7 +64,7 @@
              (Byte/toUnsignedLong b2))))
 
 (defn fixed-xor
-  "xor two same-sized buffers"
+  "xor two buffers, |bs1| <= |bs2|"
   [bs1 bs2]
   (byte-array (count bs1) (map byte-xor bs1 bs2)))
 
@@ -75,13 +75,13 @@
 
 (defn- sqr [x] (* x x))
 
-(defn map-values [f m]
+(defn- map-values [f m]
   (into {} (for [[k v] m] [k (f v)])))
 
-(defn map-length [m]
+(defn- map-length [m]
   (Math/sqrt (reduce + (map sqr (vals m)))))
 
-(defn map-norm [m]
+(defn- map-norm [m]
   (let [l (map-length m)]
     (map-values #(/ % l) m)))
 
@@ -188,6 +188,11 @@ freqs may have fewer keys than base-freqs"
       (rate-englishness-digrams text))
    (count-printable-chars text)])
 
+(defn rate-englishness-if-printable-grams [text]
+  (if (= (count-printable-chars text) (count text))
+    (rate-englishness-grams text)
+    0))
+
 ;; Back to Challenge 3
 
 (defn single-byte-xor [bs b]
@@ -195,7 +200,7 @@ freqs may have fewer keys than base-freqs"
 
 (defn single-byte-xor-info [bs b]
   (let [result (bytes->string (single-byte-xor bs b))]
-    [(rate-englishness-grams result) result]))
+    [(rate-englishness-grams result) b result]))
 
 (defn best-byte-xors [bs]
   (sort-by first >
@@ -204,6 +209,9 @@ freqs may have fewer keys than base-freqs"
 
 (defn best-byte-xor [bs]
   (last (first (best-byte-xors bs))))
+
+(defn best-byte-xor-the-byte [bs]
+  (second (first (best-byte-xors bs))))
 
 ;; Challenge 4
 
@@ -221,4 +229,30 @@ freqs may have fewer keys than base-freqs"
 
 (defn repeating-key-xor [k bs]
   (fixed-xor bs (cycle k)))
+
+;; Challenge 6
+
+(def challenge6-ciphertext
+  (with-open [in-file (io/reader "resources/6.txt")]
+    (base64-decode (string/replace (slurp in-file) "\n" ""))))
+
+(def max-key-length 40)
+
+(defn hamming-distance-byte [byte1 byte2]
+  (Integer/bitCount (Byte/toUnsignedInt (bit-xor byte1 byte2))))
+
+(defn hamming-distance [bs1 bs2]
+  (reduce + (map hamming-distance-byte bs1 bs2)))
+
+(defn average [l]
+  (/ (apply + l) (count l)))
+
+(defn keysize-edit-distance [bs keysize]
+  (let [ks (vec (take 4 (partition keysize bs))),
+        compare-keys (fn [[k1 k2]] (/ (hamming-distance k1 k2) keysize))]        
+    (average (map compare-keys (for [i (range 4), j (range (inc i) 4)] [(ks i) (ks j)])))))
+
+(defn most-likely-keysize [bs]
+  (apply min-key (partial keysize-edit-distance bs) (range 2 (inc max-key-length))))
+  
 
