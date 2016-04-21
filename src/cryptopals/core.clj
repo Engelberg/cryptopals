@@ -248,11 +248,31 @@ freqs may have fewer keys than base-freqs"
   (/ (apply + l) (count l)))
 
 (defn keysize-edit-distance [bs keysize]
-  (let [ks (vec (take 4 (partition keysize bs))),
+  (let [n 4,
+        ks (vec (take n (partition keysize bs))),
         compare-keys (fn [[k1 k2]] (/ (hamming-distance k1 k2) keysize))]        
-    (average (map compare-keys (for [i (range 4), j (range (inc i) 4)] [(ks i) (ks j)])))))
+    (average (map compare-keys (for [i (range n), j (range (inc i) n)] [(ks i) (ks j)])))))
 
 (defn most-likely-keysize [bs]
   (apply min-key (partial keysize-edit-distance bs) (range 2 (inc max-key-length))))
   
+(defn partition-into-every-nth [bs n]
+  (let [p (partition-all n bs),
+        size-of-last-partition (count (last p)),
+        long-parts (apply map vector p),
+        drop-processed (drop-last (map #(drop size-of-last-partition %) p))
+        short-parts (apply map vector drop-processed)]
+    (concat long-parts short-parts)))
 
+(defn break-repeating-key "Returns [key message] byte streams" 
+  [bs]
+  (let [keysize (most-likely-keysize bs),
+        p (partition-into-every-nth bs keysize),
+        key (map best-byte-xor-the-byte p)]
+    [key (repeating-key-xor key bs)]))
+
+(defn crack-challenge6 []
+  (map bytes->string (break-repeating-key challenge6-ciphertext)))
+
+
+                     
