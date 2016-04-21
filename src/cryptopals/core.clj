@@ -280,20 +280,20 @@ freqs may have fewer keys than base-freqs"
   (with-open [in-file (io/reader "resources/7.txt")]
     (base64-decode (string/replace (slurp in-file) "\n" ""))))
 
-(defn aes-decode "Takes bs and key as bytes" [bs key]
+(defn aes-ecb-decode "Takes bs and key as bytes" [bs key]
   (let [aes-128-ecb-instance (Cipher/getInstance "AES/ECB/PKCS5Padding"),
         secret-key-spec (SecretKeySpec. key "AES") 
         _ (.init aes-128-ecb-instance Cipher/DECRYPT_MODE secret-key-spec)]
     (.doFinal aes-128-ecb-instance bs)))
 
-(defn aes-encode "Takes bs and key as bytes" [bs key]
+(defn aes-ecb-encode "Takes bs and key as bytes" [bs key]
   (let [aes-128-ecb-instance (Cipher/getInstance "AES/ECB/PKCS5Padding"),
         secret-key-spec (SecretKeySpec. key "AES") 
         _ (.init aes-128-ecb-instance Cipher/ENCRYPT_MODE secret-key-spec)]
     (.doFinal aes-128-ecb-instance bs)))
 
 (defn crack-challenge7 []
-  (bytes->string (aes-decode challenge7-ciphertext (string->bytes "YELLOW SUBMARINE"))))
+  (bytes->string (aes-ecb-decode challenge7-ciphertext (string->bytes "YELLOW SUBMARINE"))))
 
 ;; Challenge 8
 
@@ -308,4 +308,54 @@ freqs may have fewer keys than base-freqs"
 (defn crack-challenge8 []
   (hex-encode (first (filter aes-ecb? challenge8-ciphertexts))))
 
+;; Challenge 9
 
+(defn pkcs7-pad [bs block-length]
+  (let [bs-length (count bs)]
+    (if (>= bs-length block-length) bs
+      (let [num-pad-chars (- block-length bs-length),
+            num-pad-as-byte (unchecked-byte num-pad-chars)]
+        (byte-array block-length (concat bs (repeat num-pad-chars num-pad-as-byte)))))))
+
+(defn pkcs7-unpad [bs]
+  (let [bs-length (count bs),
+        last-byte (last bs),
+        num-pad (Byte/toUnsignedInt last-byte),
+        last-bytes (take-last num-pad bs)]
+    (if (= (set last-bytes) #{last-byte})
+      (drop-last num-pad bs)
+      bs)))
+
+;; Challenge 10
+
+(def empty-init-vector (byte-array 16 (repeat 16 (byte 0))))
+
+(defn aes-cbc-encode 
+  ([bs key]
+    (aes-cbc-encode bs key empty-init-vector))
+  ([bs key iv]
+    (when (seq bs)
+      (let [encoded-block (aes-ecb-encode (fixed-xor (pkcs7-pad (take 16 bs) 16) iv) key)]
+        (concat encoded-block (aes-cbc-encode (drop 16 bs) key encoded-block)))))) 
+                            
+(defn aes-cbc-decode
+  ([bs key]
+    (aes-cbc-decode bs key empty-init-vector))
+  ([bs key iv]
+    (let [next-block (byte-array 16 (take 16 bs))
+          advance-block (drop 16 bs)]
+      (cond
+        (zero? (count next-block)) ()
+        (< (count next-block) 16) (throw (Exception. "Number of bytes not multiple of 16"))
+        :else (let [decoded-block (fixed-xor (aes-ecb-decode next-block iv))]
+                (if (seq advance-block)
+                  (concat decoded-block (aes-cbc-decode advance-block key decoded-block))
+                  [(pkcs7-unpad decoded-block)]))))))
+
+(aes-cbc-decode 
+  (aes-cbc-encode (string->bytes "Hello my name is Mark") 
+                  (string->bytes "YELLOW SUBMARINE"))
+  (string->bytes "YELLOW SUBMARINE"))
+  
+
+      
