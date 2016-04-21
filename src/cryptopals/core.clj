@@ -337,7 +337,7 @@ freqs may have fewer keys than base-freqs"
       (let [block (take 16 bs),
             block (if (seq (drop 16 bs)) block (pkcs7-pad block 16))
             encoded-block (aes-ecb-encode (fixed-xor block iv) key false)]
-        (concat encoded-block (aes-cbc-encode (drop 16 bs) key encoded-block))))))
+        (lazy-cat encoded-block (aes-cbc-encode (drop 16 bs) key encoded-block))))))
                             
 (defn aes-cbc-decode
   ([bs key]
@@ -347,7 +347,7 @@ freqs may have fewer keys than base-freqs"
       (let [block (take 16 bs),
             decoded-block (fixed-xor iv (aes-ecb-decode (byte-array block) key false))
             decoded-block (if (seq (drop 16 bs)) decoded-block (pkcs7-unpad decoded-block))]
-        (concat decoded-block (aes-cbc-decode (drop 16 bs) key block))))))
+        (lazy-cat decoded-block (aes-cbc-decode (drop 16 bs) key block))))))
 
 (def challenge10-ciphertext
   (with-open [in-file (io/reader "resources/10.txt")]
