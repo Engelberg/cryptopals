@@ -517,5 +517,24 @@ freqs may have fewer keys than base-freqs"
       true
       (throw (RuntimeException. "Padding invalid")))))
 
+;; Challenge 16
+
+(let [s1 "comment1=cooking%20MCs;userdata=",
+      s2 ";comment2=%20like%20a%20pound%20of%20bacon",
+      key (rand-aes-key)]
+  (defn encrypt-bitflipping [s]
+    (aes-cbc-encode-rand-iv (string->bytes (str s1 (str/replace s #"[;=]" "") s2)) key))
+  
+  (defn admin-test-bitflipping [bs]
+    (println (bytes->string (aes-cbc-decode-rand-iv bs key)))
+    (boolean (re-seq #";admin=true;" (bytes->string (aes-cbc-decode-rand-iv bs key))))))
+
+(defn crack-challenge16 []
+  (let [ct (encrypt-bitflipping "xxxxxxxxxxxxxxxx"),
+        block (nth-block ct 16 3),
+        new-block (fixed-xor block (fixed-xor (string->bytes ";comment2=%20lik") (string->bytes ";admin=true;com="))),
+        modified-ct (concat (take 48 ct) new-block (drop 64 ct))]
+    (admin-test-bitflipping modified-ct)))
+
                 
                                   
