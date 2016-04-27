@@ -462,7 +462,60 @@ freqs may have fewer keys than base-freqs"
       
 ;; Challenge 14
 
+(let [key (rand-aes-key)
+      unknown-target (base64-decode "Um9sbGluJyBpbiBteSA1LjAKV2l0aCBteSByYWctdG9wIGRvd24gc28gbXkgaGFpciBjYW4gYmxvdwpUaGUgZ2lybGllcyBvbiBzdGFuZGJ5IHdhdmluZyBqdXN0IHRvIHNheSBoaQpEaWQgeW91IHN0b3A/IE5vLCBJIGp1c3QgZHJvdmUgYnkK")
+      unknown-prefix (rand-bytes (inc (rand-int 100)))]
+  (defn aes-ecb-encrypt-data-unknown-prefix [bs]
+    (let [unknown-plus-bs (concat unknown-prefix bs unknown-target)]
+      (aes-ecb-encode unknown-plus-bs key))))
 
+(defn equal-adjacent-blocks "Returns index of first adjacent block" [bs]
+  (first (keep-indexed (fn [index [x y]] (when (= x y) index)) (partition 2 1 (partition 16 bs)))))
+
+(defn prefix-is-n-chars-short-of-a-block? 
+  "Returns index of first adjacent block" 
+  [encryptor block-size n]
+  (let [block-fill 
+        (fn [i] (equal-adjacent-blocks
+                  (encryptor (concat (repeat n (byte 0)) 
+                                     (repeat (* 2 block-size) (byte i))))))]
+    ; Try 3 fills so we can't get spurious results by a matching byte on the boundary of the block
+    (and (block-fill 1) (block-fill 2) (block-fill 3))))
+
+(defn prefix-is-how-short-of-a-block 
+  "Returns ordered pair of how much to pad the prefix and the first-attacker-block"
+  [encryptor block-size]
+  (first (for [i (range block-size) 
+               :let [first-attacker-block (prefix-is-n-chars-short-of-a-block? encryptor block-size i)]
+               :when first-attacker-block]               
+           [i first-attacker-block])))
+
+(defn discover-byte [encryptor block-size discovered-bytes]
+  (let [n-discovered-bytes (count discovered-bytes),
+        n-discovered-blocks (quot n-discovered-bytes block-size),
+        n-leftover-bytes (rem n-discovered-bytes block-size),
+        block-with-one-unknown (take-last (dec block-size) 
+                                          (concat (repeat block-size 0) discovered-bytes)),
+        prepend-bytes (repeat (- (dec block-size) n-leftover-bytes) 0),
+        ;; New things for challenge 14
+        [num-prefix-pad first-attacker-block-index] (prefix-is-how-short-of-a-block encryptor block-size) 
+        prefix-pad (repeat num-prefix-pad 0)        
+        dict (into {} (for [i (range -128 128) :let [b (byte i)]]
+                        [(nth-block (encryptor (concat prefix-pad block-with-one-unknown [b]))
+                                    block-size
+                                    first-attacker-block-index) 
+                         b]))]
+    (-> (encryptor (concat prefix-pad prepend-bytes))
+      (nth-block block-size (+ first-attacker-block-index n-discovered-blocks))
+      dict)))
+
+;; Challenge 15
+
+(defn valid-padding? [bs]
+  (let [last-byte (last bs)]
+    (if (and last-byte (= (repeat last-byte last-byte) (take-last last-byte bs)))
+      true
+      (throw (RuntimeException. "Padding invalid")))))
 
                 
-                        
+                                  
