@@ -2,6 +2,7 @@
   (:require [clojure.java.io :as io]
             [clojure.string :as string]
             [clojure.data.csv :as csv]
+            [clojure.string :as str]
             [utils.cond :as u])
   (:import javax.crypto.Cipher javax.crypto.spec.SecretKeySpec))
 
@@ -426,10 +427,42 @@ freqs may have fewer keys than base-freqs"
           (if (= next-byte (byte 1)) (bytes->string discovered-bytes)
             (recur (conj discovered-bytes next-byte))))))))
 
+;; Challenge 13
+
+(defn parse-kv [s]
+  (let [pairs (str/split s #"&"),
+        kv-pairs (for [pair pairs] (str/split pair #"="))]
+    (into {} kv-pairs)))
+
+(defn produce-kv [m]
+  (str/join \&
+    (for [[k v] m] (str k "=" v))))
+
+(defn sanitize [s]
+  (string/replace s #"[&=]" ""))
+
+(defn profile-for "Takes email address" [s]
+  (produce-kv
+    {"email" (sanitize s),
+     "uid" 10,
+     "role" "user"}))
+
+(let [key (rand-aes-key)]
+  (defn encrypt-user-profile-for "Takes email address" [s]
+    (aes-ecb-encode (string->bytes (profile-for s)) key))
+  
+  (defn decrypt-and-parse-profile "Takes encrypted profile" [e]
+    (parse-kv (bytes->string (aes-ecb-decode e key)))))  
+
+(defn crack-challenge13 []
+  (let [user1 "max@gmail.com",
+        user2 (format "mark@gmailadmin%s.com" (apply str (repeat 11 (char 11)))),
+        [ct1 ct2] (map encrypt-user-profile-for [user1 user2])],
+    (byte-array (concat (drop-last 16 ct1) (nth-block ct2 16 1)))))
+      
+;; Challenge 14
 
 
 
-    
-
-
-
+                
+                        
