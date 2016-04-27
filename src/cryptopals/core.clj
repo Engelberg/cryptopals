@@ -1,7 +1,8 @@
 (ns cryptopals.core
   (:require [clojure.java.io :as io]
             [clojure.string :as string]
-            [clojure.data.csv :as csv])
+            [clojure.data.csv :as csv]
+            [utils.cond :as u])
   (:import javax.crypto.Cipher javax.crypto.spec.SecretKeySpec))
 
 (def byte->char unchecked-char)
@@ -283,7 +284,8 @@ freqs may have fewer keys than base-freqs"
 (defn aes-ecb "Takes bs and key as bytes. bs must be byte array when decrypting"
   ([mode bs key] (aes-ecb mode bs key true)) ; pad by default
   ([mode bs key padding?]
-    (let [aes-128-ecb-instance (Cipher/getInstance (format "AES/ECB/%sPadding" (if padding? "PKCS5" "No"))),
+    (let [bs (byte-array bs),
+          aes-128-ecb-instance (Cipher/getInstance (format "AES/ECB/%sPadding" (if padding? "PKCS5" "No"))),
           secret-key-spec (SecretKeySpec. key "AES") 
           _ (.init aes-128-ecb-instance 
               (get {:encrypt Cipher/ENCRYPT_MODE, :decrypt Cipher/DECRYPT_MODE} mode)
@@ -347,7 +349,7 @@ freqs may have fewer keys than base-freqs"
   ([bs key iv]
     (when (seq bs)
       (let [block (take 16 bs),
-            decoded-block (fixed-xor iv (aes-ecb-decode (byte-array block) key false))
+            decoded-block (fixed-xor iv (aes-ecb-decode block key false))
             decoded-block (if (seq (drop 16 bs)) decoded-block (pkcs7-unpad decoded-block))]
         (lazy-cat decoded-block (aes-cbc-decode (drop 16 bs) key block))))))
 
@@ -373,14 +375,61 @@ freqs may have fewer keys than base-freqs"
   (aes-cbc-decode (drop 16 bs) key (take 16 bs)))
 
 (defn aes-encrypt-data-unknown-key [bs]
-  (let [randomly-wrapped-bs (byte-array (concat (rand-bytes (+ 5 (rand-int 6))) 
-                                                bs
-                                                (rand-bytes (+ 5 (rand-int 6))))),
+  (let [randomly-wrapped-bs (concat (rand-bytes (+ 5 (rand-int 6))) 
+                                    bs
+                                    (rand-bytes (+ 5 (rand-int 6)))),
         encoder (if (zero? (rand-int 2)) aes-cbc-encode-rand-iv aes-ecb-encode)]
     (if (= encoder aes-cbc-encode-rand-iv) (println "CBC") (println "ECB"))
     (encoder randomly-wrapped-bs (rand-aes-key))))
 
 (defn aes-encryption-mode-detector [encryptor]
-  (if (aes-ecb? (encryptor (byte-array (repeat 64 0))))                  
+  (if (aes-ecb? (encryptor (repeat 64 0)))                  
     :ecb :cbc))
+
+;; Challenge 12
+
+(let [key (rand-aes-key)
+      unknown-string (base64-decode "Um9sbGluJyBpbiBteSA1LjAKV2l0aCBteSByYWctdG9wIGRvd24gc28gbXkgaGFpciBjYW4gYmxvdwpUaGUgZ2lybGllcyBvbiBzdGFuZGJ5IHdhdmluZyBqdXN0IHRvIHNheSBoaQpEaWQgeW91IHN0b3A/IE5vLCBJIGp1c3QgZHJvdmUgYnkK")]
+  (defn aes-ecb-encrypt-data-unknown-but-consistent-key [bs]
+    (let [bs-plus-unknown (concat bs unknown-string)]
+      (aes-ecb-encode bs-plus-unknown key))))
+
+(defn discover-block-size [encryptor]
+  (let [[x y] (distinct
+                (for [n (iterate inc 1)]
+                  (count (encryptor (repeat n 0)))))]
+    (- y x)))
+
+(defn nth-block "0-based" [bs block-size n]
+  (->> bs (drop (* block-size n)) (take block-size)))
+
+(defn discover-byte [encryptor block-size discovered-bytes]
+  (let [;print-encryptor (fn [i] (println i) (println (take block-size (encryptor i))) (encryptor i))
+        n-discovered-bytes (count discovered-bytes),
+        n-discovered-blocks (quot n-discovered-bytes block-size),
+        n-leftover-bytes (rem n-discovered-bytes block-size),
+        block-with-one-unknown (take-last (dec block-size) 
+                                          (concat (repeat block-size 0) discovered-bytes)),
+        prepend-bytes (repeat (- (dec block-size) n-leftover-bytes) 0),        
+        dict (into {} (for [i (range -128 128) :let [b (byte i)]]
+                        [(take block-size (encryptor (concat block-with-one-unknown [b]))) 
+                         b]))]
+    (-> (encryptor prepend-bytes)
+      (nth-block block-size n-discovered-blocks)
+      dict)))
+
+(defn decrypt-unknown-string [encryptor]
+  (when (= :ecb (aes-encryption-mode-detector encryptor))
+    (let [block-size (discover-block-size encryptor)]
+      (loop [discovered-bytes []]
+        (let [next-byte (discover-byte encryptor block-size discovered-bytes)]
+          (if (= next-byte (byte 1)) (bytes->string discovered-bytes)
+            (recur (conj discovered-bytes next-byte))))))))
+
+
+
+
+    
+
+
 
