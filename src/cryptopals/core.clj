@@ -280,13 +280,15 @@ freqs may have fewer keys than base-freqs"
   (with-open [in-file (io/reader "resources/7.txt")]
     (base64-decode (string/replace (slurp in-file) "\n" ""))))
 
-(defn aes-ecb "Takes bs and key as bytes. bs must be byte array when decrypting" [mode bs key padding?]
-  (let [aes-128-ecb-instance (Cipher/getInstance (format "AES/ECB/%sPadding" (if padding? "PKCS5" "No"))),
-        secret-key-spec (SecretKeySpec. key "AES") 
-        _ (.init aes-128-ecb-instance 
-            (get {:encrypt Cipher/ENCRYPT_MODE, :decrypt Cipher/DECRYPT_MODE} mode)
-            secret-key-spec)]
-    (.doFinal aes-128-ecb-instance bs)))
+(defn aes-ecb "Takes bs and key as bytes. bs must be byte array when decrypting"
+  ([mode bs key] (aes-ecb mode bs key true)) ; pad by default
+  ([mode bs key padding?]
+    (let [aes-128-ecb-instance (Cipher/getInstance (format "AES/ECB/%sPadding" (if padding? "PKCS5" "No"))),
+          secret-key-spec (SecretKeySpec. key "AES") 
+          _ (.init aes-128-ecb-instance 
+              (get {:encrypt Cipher/ENCRYPT_MODE, :decrypt Cipher/DECRYPT_MODE} mode)
+              secret-key-spec)]
+      (.doFinal aes-128-ecb-instance bs))))
 
 (def aes-ecb-encode (partial aes-ecb :encrypt))
 (def aes-ecb-decode (partial aes-ecb :decrypt))
@@ -356,3 +358,29 @@ freqs may have fewer keys than base-freqs"
 (defn crack-challenge10 []
   (bytes->string (aes-cbc-decode challenge10-ciphertext (string->bytes "YELLOW SUBMARINE"))))
       
+;; Challenge 11
+
+(defn rand-bytes [n]
+  (byte-array (repeatedly n #(unchecked-byte (rand-int 256)))))
+
+(defn rand-aes-key [] (rand-bytes 16))
+
+(defn aes-cbc-encode-rand-iv "Prepends iv onto ciphertext" [bs key]
+  (let [iv (rand-bytes 16)]
+    (concat iv (aes-cbc-encode bs key iv)))) 
+
+(defn aes-cbc-decode-rand-iv "Assumes iv is prepended onto ciphertext" [bs key]
+  (aes-cbc-decode (drop 16 bs) key (take 16 bs)))
+
+(defn aes-encrypt-data-unknown-key [bs]
+  (let [randomly-wrapped-bs (byte-array (concat (rand-bytes (+ 5 (rand-int 6))) 
+                                                bs
+                                                (rand-bytes (+ 5 (rand-int 6))))),
+        encoder (if (zero? (rand-int 2)) aes-cbc-encode-rand-iv aes-ecb-encode)]
+    (if (= encoder aes-cbc-encode-rand-iv) (println "CBC") (println "ECB"))
+    (encoder randomly-wrapped-bs (rand-aes-key))))
+
+(defn aes-encryption-mode-detector [encryptor]
+  (if (aes-ecb? (encryptor (byte-array (repeat 64 0))))                  
+    :ecb :cbc))
+
