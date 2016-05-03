@@ -3,8 +3,10 @@
             [clojure.string :as string]
             [clojure.data.csv :as csv]
             [clojure.string :as str]
-            [utils.cond :as u])
-  (:import javax.crypto.Cipher javax.crypto.spec.SecretKeySpec))
+            [utils.cond :as u]
+            [clojure.math.numeric-tower :as m])
+  (:import javax.crypto.Cipher javax.crypto.spec.SecretKeySpec
+           ec.util.MersenneTwister))
 
 (def byte->char unchecked-char)
 (def char->byte (comp unchecked-byte int))
@@ -626,14 +628,114 @@ freqs may have fewer keys than base-freqs"
       (recur (inc i))))
   ba)
 
-(defn aes-ctr-decode-nonce
+(defn aes-ctr-nonce
   "key is 16 bytes, nonce is 8 bytes"
   ([bs key nonce]
-    (aes-ctr-decode-nonce bs key nonce (byte-array (repeat 8 0))))
+    (aes-ctr-nonce bs key nonce (byte-array (repeat 8 0))))
   ([bs key nonce ctr]
     (when (seq bs)
       (let [block (take 16 bs),
             decoded-block (fixed-xor block (aes-ecb-encode (concat nonce ctr) key false))
             ctr (inc-byte-array-little-endian! ctr)]
-        (lazy-cat decoded-block (aes-ctr-decode-nonce (drop 16 bs) key nonce ctr))))))
+        (lazy-cat decoded-block (aes-ctr-nonce (drop 16 bs) key nonce ctr))))))
 
+;; Challenge 19-20
+
+(def challenge19-strings
+  (map base64-decode
+       (string/split-lines
+"SSBoYXZlIG1ldCB0aGVtIGF0IGNsb3NlIG9mIGRheQ==
+Q29taW5nIHdpdGggdml2aWQgZmFjZXM=
+RnJvbSBjb3VudGVyIG9yIGRlc2sgYW1vbmcgZ3JleQ==
+RWlnaHRlZW50aC1jZW50dXJ5IGhvdXNlcy4=
+SSBoYXZlIHBhc3NlZCB3aXRoIGEgbm9kIG9mIHRoZSBoZWFk
+T3IgcG9saXRlIG1lYW5pbmdsZXNzIHdvcmRzLA==
+T3IgaGF2ZSBsaW5nZXJlZCBhd2hpbGUgYW5kIHNhaWQ=
+UG9saXRlIG1lYW5pbmdsZXNzIHdvcmRzLA==
+QW5kIHRob3VnaHQgYmVmb3JlIEkgaGFkIGRvbmU=
+T2YgYSBtb2NraW5nIHRhbGUgb3IgYSBnaWJl
+VG8gcGxlYXNlIGEgY29tcGFuaW9u
+QXJvdW5kIHRoZSBmaXJlIGF0IHRoZSBjbHViLA==
+QmVpbmcgY2VydGFpbiB0aGF0IHRoZXkgYW5kIEk=
+QnV0IGxpdmVkIHdoZXJlIG1vdGxleSBpcyB3b3JuOg==
+QWxsIGNoYW5nZWQsIGNoYW5nZWQgdXR0ZXJseTo=
+QSB0ZXJyaWJsZSBiZWF1dHkgaXMgYm9ybi4=
+VGhhdCB3b21hbidzIGRheXMgd2VyZSBzcGVudA==
+SW4gaWdub3JhbnQgZ29vZCB3aWxsLA==
+SGVyIG5pZ2h0cyBpbiBhcmd1bWVudA==
+VW50aWwgaGVyIHZvaWNlIGdyZXcgc2hyaWxsLg==
+V2hhdCB2b2ljZSBtb3JlIHN3ZWV0IHRoYW4gaGVycw==
+V2hlbiB5b3VuZyBhbmQgYmVhdXRpZnVsLA==
+U2hlIHJvZGUgdG8gaGFycmllcnM/
+VGhpcyBtYW4gaGFkIGtlcHQgYSBzY2hvb2w=
+QW5kIHJvZGUgb3VyIHdpbmdlZCBob3JzZS4=
+VGhpcyBvdGhlciBoaXMgaGVscGVyIGFuZCBmcmllbmQ=
+V2FzIGNvbWluZyBpbnRvIGhpcyBmb3JjZTs=
+SGUgbWlnaHQgaGF2ZSB3b24gZmFtZSBpbiB0aGUgZW5kLA==
+U28gc2Vuc2l0aXZlIGhpcyBuYXR1cmUgc2VlbWVkLA==
+U28gZGFyaW5nIGFuZCBzd2VldCBoaXMgdGhvdWdodC4=
+VGhpcyBvdGhlciBtYW4gSSBoYWQgZHJlYW1lZA==
+QSBkcnVua2VuLCB2YWluLWdsb3Jpb3VzIGxvdXQu
+SGUgaGFkIGRvbmUgbW9zdCBiaXR0ZXIgd3Jvbmc=
+VG8gc29tZSB3aG8gYXJlIG5lYXIgbXkgaGVhcnQs
+WWV0IEkgbnVtYmVyIGhpbSBpbiB0aGUgc29uZzs=
+SGUsIHRvbywgaGFzIHJlc2lnbmVkIGhpcyBwYXJ0
+SW4gdGhlIGNhc3VhbCBjb21lZHk7
+SGUsIHRvbywgaGFzIGJlZW4gY2hhbmdlZCBpbiBoaXMgdHVybiw=
+VHJhbnNmb3JtZWQgdXR0ZXJseTo=
+QSB0ZXJyaWJsZSBiZWF1dHkgaXMgYm9ybi4=")))
+
+(let [key (rand-aes-key)]
+  (def challenge19-encrypted-strings (map #(aes-ctr-nonce % key (byte-array (repeat 8 0)))
+                                          challenge19-strings)))
+
+(defn group-by-column [lobs]
+  (let [max-len (apply max (map count lobs)),
+        lobs (for [bs lobs] (into (vec bs) (repeat (- max-len (count bs)) nil)))]
+    (map #(remove nil? %) (apply (partial map vector) lobs))))
+
+(defn find-keystream [cts]
+  (map best-byte-xor-the-byte (group-by-column cts)))
+
+(def t1 (apply (partial map vector) challenge19-encrypted-strings))
+(def t2 (group-by-column challenge19-encrypted-strings))
+
+(defn crack-challenge19 []
+  (map #(bytes->string (fixed-xor % (find-keystream challenge19-encrypted-strings))) 
+       challenge19-encrypted-strings))
+
+;; Challenge 21
+
+(defrecord MersenneTwist [index mta])
+
+(defn- int-mask [x] (bit-and x 0xffffffff))
+(defn- xor [x y] (int-mask (bit-xor x y)))
+(defn- bsr [x n] (unsigned-bit-shift-right (int-mask x) n)) 
+
+(defn mersenne-twister [seed]
+  (let [a (int-array 624 0)]
+    (aset a 0 seed)
+    (doseq [i (range 1 624)]
+      (let [a_i-1 (aget a (dec i))]
+        (aset a i (+ i (* 1812433253 
+                         (xor a_i-1 (bsr a_i-1 30)))))))
+    (->MersenneTwist (atom 624) a)))
+
+(defn- twist! [{:keys [index mta]}]
+  (dotimes [i 624]
+    (let [y (+ (bit-and (aget mta i) 0x80000000)
+               (bit-and (aget mta (mod (inc i) 624)) 0x7fffffff))]
+      (aset mta i (bit-xor (aget mta (mod (+ i 397) 624)) (bsr y 1)))
+      (when (odd? y)
+        (aset mta i (bit-xor (aget mta i) 0x9908b0df)))))
+  (reset! index 0))
+  
+(defn gen-rand! [{:keys [index mta] :as mt}]
+  (when (>= @index 624) (twist! mt))
+  (let [y (get mta @index),
+        y (bit-xor y (bsr y 11))
+        y (bit-xor y (bit-and (bit-shift-left y 7) 2636928640))
+        y (bit-xor y (bit-and (bit-shift-left y 15) 4022730752))
+        y (bit-xor y (bsr y 18))]
+    (swap! index inc)
+    (unchecked-int y)))

@@ -43,7 +43,7 @@
            (is (= "Rollin' in my 5.0\nWith my rag-top down so my hair can blow\nThe girlies on standby waving just to say hi\nDid you stop? No, I just drove by\n" (decrypt-unknown-string aes-ecb-encrypt-data-unknown-prefix))))
   (testing "problem 18"
            (is (= "Yo, VIP Let's kick it Ice, Ice, baby Ice, Ice, baby "
-                  (bytes->string (aes-ctr-decode-nonce (base64-decode "L77na/nrFsKvynd6HzOoG7GHTLXsTVu9qvY/2syLXzhPweyyMTJULu/6/kXX0KSvoOLSFQ==")
+                  (bytes->string (aes-ctr-nonce (base64-decode "L77na/nrFsKvynd6HzOoG7GHTLXsTVu9qvY/2syLXzhPweyyMTJULu/6/kXX0KSvoOLSFQ==")
                                      (string->bytes "YELLOW SUBMARINE") (byte-array (repeat 8 0)))))))
   
   )
