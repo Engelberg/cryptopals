@@ -572,7 +572,6 @@ freqs may have fewer keys than base-freqs"
 (def byte-range (range -128 128))
 
 (defn padding-attack-byte [bs discovered-bytes]
-  (println discovered-bytes)
   (let [blocks (map vec (partition 16 bs)),
         num-discovered-bytes (count discovered-bytes),
         num-discovered-blocks (quot num-discovered-bytes 16),
@@ -584,32 +583,25 @@ freqs may have fewer keys than base-freqs"
         penultimate-block (nth relevant-blocks penultimate-block-index),
         byte-to-discover-index (- 15 num-leftover-bytes),
         padding-byte (byte (inc num-leftover-bytes)),
-        _ (println "padding-byte" padding-byte)
         
         new-penultimate-block ; change end of block to padding byte 
         (into [] (for [i (range 16)]
-                   (if (<= i byte-to-discover-index)
-                     (penultimate-block i)
+                   (cond
+                     (= i (dec byte-to-discover-index))
+                     (byte-xor (byte -1) (penultimate-block i)), ; to protect against false matches
+                     (<= i byte-to-discover-index)
+                     (penultimate-block i),
+                     :else
                      (byte-xor padding-byte
                                (penultimate-block i)
                                (nth leftover-bytes (- i (inc byte-to-discover-index))))))),
         
         penultimate-block-alterations ; [i block-alteration] pairs
-        (concat 
-          (when (pos? byte-to-discover-index)
-            (for [i byte-range]
-              [i (assoc new-penultimate-block 
-                        byte-to-discover-index (byte-xor (new-penultimate-block byte-to-discover-index)
-                                                         padding-byte 
-                                                         (byte i))
-                        (dec byte-to-discover-index) (byte-xor (new-penultimate-block (dec byte-to-discover-index))
-                                                               (byte -127)))]))
-          (for [i byte-range]
-            [i (update new-penultimate-block 
-                      byte-to-discover-index #(byte-xor % padding-byte (byte i)))]))]
+        (for [i byte-range]
+          [i (update new-penultimate-block 
+                     byte-to-discover-index #(byte-xor % padding-byte (byte i)))])]
     
         (first (for [[i block-alteration] penultimate-block-alterations
-                     ;:let [_ (println "i" i)]
                      :when (cbc-padding-oracle-decrypt 
                              (apply concat 
                                     (assoc relevant-blocks penultimate-block-index block-alteration)))]
@@ -624,7 +616,6 @@ freqs may have fewer keys than base-freqs"
 
 (defn crack-challenge17 []
   (let [ct (cbc-padding-oracle-encrypt)]
-    ;(padding-attack-byte ct ())))
     (bytes->string (pkcs7-unpad (padding-attack ct)))))
                 
                         
