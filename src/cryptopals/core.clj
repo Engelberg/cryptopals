@@ -739,3 +739,15 @@ QSB0ZXJyaWJsZSBiZWF1dHkgaXMgYm9ybi4=")))
         y (bit-xor y (bsr y 18))]
     (swap! index inc)
     (unchecked-int y)))
+
+;; Challenge 22
+
+(defn crack-seed [r]
+  (first (for [i (range (m/expt 2 32))
+               :when (= r (gen-rand! (mersenne-twister i)))]
+           i)))
+              
+(defn crack-seed2 [r]
+  (first (for [i (range (m/expt 2 32))
+               :when (= r (.nextInt (MersenneTwister. i)))]
+           i)))
