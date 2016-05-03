@@ -606,8 +606,7 @@ freqs may have fewer keys than base-freqs"
                              (apply concat 
                                     (assoc relevant-blocks penultimate-block-index block-alteration)))]
                  i))))
-                     
-        
+                             
 (defn padding-attack [bs]
   (loop [discovered-bytes ()]
     (if (<= (- (count bs) (count discovered-bytes)) 16)
@@ -618,4 +617,23 @@ freqs may have fewer keys than base-freqs"
   (let [ct (cbc-padding-oracle-encrypt)]
     (bytes->string (pkcs7-unpad (padding-attack ct)))))
                 
-                        
+;; Challenge 18
+
+(defn inc-byte-array-little-endian! [ba]
+  (loop [i 0]
+    (aset ba i (unchecked-byte (inc (aget ba i))))
+    (when (and (zero? (aget ba i)) (< i (count ba)))
+      (recur (inc i))))
+  ba)
+
+(defn aes-ctr-decode-nonce
+  "key is 16 bytes, nonce is 8 bytes"
+  ([bs key nonce]
+    (aes-ctr-decode-nonce bs key nonce (byte-array (repeat 8 0))))
+  ([bs key nonce ctr]
+    (when (seq bs)
+      (let [block (take 16 bs),
+            decoded-block (fixed-xor block (aes-ecb-encode (concat nonce ctr) key false))
+            ctr (inc-byte-array-little-endian! ctr)]
+        (lazy-cat decoded-block (aes-ctr-decode-nonce (drop 16 bs) key nonce ctr))))))
+
