@@ -60,10 +60,13 @@
 
 ;; Challenge 2
 
-(defn byte-xor [b1 b2]
-  (unchecked-byte
-    (bit-xor (Byte/toUnsignedLong b1)
-             (Byte/toUnsignedLong b2))))
+(defn byte-xor 
+  ([b1 b2]
+    (unchecked-byte
+      (bit-xor (Byte/toUnsignedLong b1)
+               (Byte/toUnsignedLong b2))))
+  ([b1 b2 & bs]
+    (reduce byte-xor (cons b1 (cons b2 bs)))))
 
 (defn fixed-xor
   "xor two buffers, |bs1| <= |bs2|"
@@ -321,7 +324,11 @@ freqs may have fewer keys than base-freqs"
             num-pad-as-byte (unchecked-byte num-pad-chars)]
         (byte-array block-length (concat bs (repeat num-pad-chars num-pad-as-byte)))))))
 
+(def ^:dynamic *throw-error-if-incorrect-padding* false)
+(declare valid-padding?)
+
 (defn pkcs7-unpad [bs]
+  (when *throw-error-if-incorrect-padding* (valid-padding? bs))
   (let [bs-length (count bs),
         last-byte (last bs),
         num-pad (Byte/toUnsignedInt last-byte),
@@ -512,8 +519,9 @@ freqs may have fewer keys than base-freqs"
 ;; Challenge 15
 
 (defn valid-padding? [bs]
+  ;(println (take-last 16 bs))
   (let [last-byte (last bs)]
-    (if (and last-byte (= (repeat last-byte last-byte) (take-last last-byte bs)))
+    (if (and last-byte (<= last-byte 16) (= (repeat last-byte last-byte) (take-last last-byte bs)))
       true
       (throw (RuntimeException. "Padding invalid")))))
 
@@ -536,5 +544,87 @@ freqs may have fewer keys than base-freqs"
         modified-ct (concat (take 48 ct) new-block (drop 64 ct))]
     (admin-test-bitflipping modified-ct)))
 
+;; Challenge 17
+
+(def cbc-padding-oracle-strings
+  (map base64-decode
+       ["MDAwMDAwTm93IHRoYXQgdGhlIHBhcnR5IGlzIGp1bXBpbmc="
+        "MDAwMDAxV2l0aCB0aGUgYmFzcyBraWNrZWQgaW4gYW5kIHRoZSBWZWdhJ3MgYXJlIHB1bXBpbic="
+        "MDAwMDAyUXVpY2sgdG8gdGhlIHBvaW50LCB0byB0aGUgcG9pbnQsIG5vIGZha2luZw=="
+        "MDAwMDAzQ29va2luZyBNQydzIGxpa2UgYSBwb3VuZCBvZiBiYWNvbg=="
+        "MDAwMDA0QnVybmluZyAnZW0sIGlmIHlvdSBhaW4ndCBxdWljayBhbmQgbmltYmxl"
+        "MDAwMDA1SSBnbyBjcmF6eSB3aGVuIEkgaGVhciBhIGN5bWJhbA=="
+        "MDAwMDA2QW5kIGEgaGlnaCBoYXQgd2l0aCBhIHNvdXBlZCB1cCB0ZW1wbw=="
+        "MDAwMDA3SSdtIG9uIGEgcm9sbCwgaXQncyB0aW1lIHRvIGdvIHNvbG8="
+        "MDAwMDA4b2xsaW4nIGluIG15IGZpdmUgcG9pbnQgb2g="
+        "MDAwMDA5aXRoIG15IHJhZy10b3AgZG93biBzbyBteSBoYWlyIGNhbiBibG93"]))
+
+(let [key (rand-aes-key)]
+  (defn cbc-padding-oracle-encrypt []
+    (aes-cbc-encode-rand-iv (rand-nth cbc-padding-oracle-strings) key))
+  
+  (defn cbc-padding-oracle-decrypt [bs]    
+    (binding [*throw-error-if-incorrect-padding* true]
+      (try
+        (do (doall (aes-cbc-decode-rand-iv bs key)) true)
+        (catch RuntimeException e false)))))
+
+(def byte-range (range -128 128))
+
+(defn padding-attack-byte [bs discovered-bytes]
+  (println discovered-bytes)
+  (let [blocks (map vec (partition 16 bs)),
+        num-discovered-bytes (count discovered-bytes),
+        num-discovered-blocks (quot num-discovered-bytes 16),
+        num-leftover-bytes (rem num-discovered-bytes 16),
+        leftover-bytes (take num-leftover-bytes discovered-bytes),
+        relevant-blocks (vec (drop-last num-discovered-blocks blocks))
+        num-relevant-blocks (count relevant-blocks)
+        penultimate-block-index (- num-relevant-blocks 2)
+        penultimate-block (nth relevant-blocks penultimate-block-index),
+        byte-to-discover-index (- 15 num-leftover-bytes),
+        padding-byte (byte (inc num-leftover-bytes)),
+        _ (println "padding-byte" padding-byte)
+        
+        new-penultimate-block ; change end of block to padding byte 
+        (into [] (for [i (range 16)]
+                   (if (<= i byte-to-discover-index)
+                     (penultimate-block i)
+                     (byte-xor padding-byte
+                               (penultimate-block i)
+                               (nth leftover-bytes (- i (inc byte-to-discover-index))))))),
+        
+        penultimate-block-alterations ; [i block-alteration] pairs
+        (concat 
+          (when (pos? byte-to-discover-index)
+            (for [i byte-range]
+              [i (assoc new-penultimate-block 
+                        byte-to-discover-index (byte-xor (new-penultimate-block byte-to-discover-index)
+                                                         padding-byte 
+                                                         (byte i))
+                        (dec byte-to-discover-index) (byte-xor (new-penultimate-block (dec byte-to-discover-index))
+                                                               (byte -127)))]))
+          (for [i byte-range]
+            [i (update new-penultimate-block 
+                      byte-to-discover-index #(byte-xor % padding-byte (byte i)))]))]
+    
+        (first (for [[i block-alteration] penultimate-block-alterations
+                     ;:let [_ (println "i" i)]
+                     :when (cbc-padding-oracle-decrypt 
+                             (apply concat 
+                                    (assoc relevant-blocks penultimate-block-index block-alteration)))]
+                 i))))
+                     
+        
+(defn padding-attack [bs]
+  (loop [discovered-bytes ()]
+    (if (<= (- (count bs) (count discovered-bytes)) 16)
+      discovered-bytes
+      (recur (cons (padding-attack-byte bs discovered-bytes) discovered-bytes)))))
+
+(defn crack-challenge17 []
+  (let [ct (cbc-padding-oracle-encrypt)]
+    ;(padding-attack-byte ct ())))
+    (bytes->string (pkcs7-unpad (padding-attack ct)))))
                 
-                                  
+                        
