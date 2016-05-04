@@ -294,7 +294,7 @@ freqs may have fewer keys than base-freqs"
           aes-128-ecb-instance (Cipher/getInstance (format "AES/ECB/%sPadding" (if padding? "PKCS5" "No"))),
           secret-key-spec (SecretKeySpec. key "AES") 
           _ (.init aes-128-ecb-instance 
-              (get {:encrypt Cipher/ENCRYPT_MODE, :decrypt Cipher/DECRYPT_MODE} mode)
+              (int (get {:encrypt Cipher/ENCRYPT_MODE, :decrypt Cipher/DECRYPT_MODE} mode))
               secret-key-spec)]
       (.doFinal aes-128-ecb-instance bs))))
 
@@ -621,7 +621,7 @@ freqs may have fewer keys than base-freqs"
                 
 ;; Challenge 18
 
-(defn inc-byte-array-little-endian! [ba]
+(defn inc-byte-array-little-endian! [^bytes ba]
   (loop [i 0]
     (aset ba i (unchecked-byte (inc (aget ba i))))
     (when (and (zero? (aget ba i)) (< i (count ba)))
@@ -712,27 +712,28 @@ QSB0ZXJyaWJsZSBiZWF1dHkgaXMgYm9ybi4=")))
 (defn- xor [x y] (int-mask (bit-xor x y)))
 (defn- bsr [x n] (unsigned-bit-shift-right (int-mask x) n)) 
 
-(defn mersenne-twister [seed]
-  (let [a (int-array 624 0)]
+(defn mersenne-twister [^long seed]
+  (let [^ints a (int-array 624 0)]
     (aset a 0 seed)
     (doseq [i (range 1 624)]
       (let [a_i-1 (aget a (dec i))]
-        (aset a i (+ i (* 1812433253 
-                         (xor a_i-1 (bsr a_i-1 30)))))))
+        (aset a i (unchecked-int 
+                    (+ i (* 1812433253 
+                            (xor a_i-1 (bsr a_i-1 30))))))))
     (->MersenneTwist (atom 624) a)))
 
-(defn- twist! [{:keys [index mta]}]
+(defn- twist! [{:keys [index ^ints mta]}]
   (dotimes [i 624]
     (let [y (+ (bit-and (aget mta i) 0x80000000)
                (bit-and (aget mta (mod (inc i) 624)) 0x7fffffff))]
-      (aset mta i (bit-xor (aget mta (mod (+ i 397) 624)) (bsr y 1)))
+      (aset mta i (unchecked-int (bit-xor (aget mta (mod (+ i 397) 624)) (bsr y 1))))
       (when (odd? y)
-        (aset mta i (bit-xor (aget mta i) 0x9908b0df)))))
+        (aset mta i (unchecked-int (bit-xor (aget mta i) 0x9908b0df))))))
   (reset! index 0))
   
-(defn gen-rand! [{:keys [index mta] :as mt}]
+(defn gen-rand! [{:keys [index ^ints mta] :as mt}]
   (when (>= @index 624) (twist! mt))
-  (let [y (get mta @index),
+  (let [y (aget mta @index),
         y (bit-xor y (bsr y 11))
         y (bit-xor y (bit-and (bit-shift-left y 7) 2636928640))
         y (bit-xor y (bit-and (bit-shift-left y 15) 4022730752))
@@ -749,5 +750,5 @@ QSB0ZXJyaWJsZSBiZWF1dHkgaXMgYm9ybi4=")))
               
 (defn crack-seed2 [r]
   (first (for [i (range (m/expt 2 32))
-               :when (= r (.nextInt (MersenneTwister. i)))]
+               :when (= r (.nextInt (MersenneTwister. (long i))))]
            i)))
